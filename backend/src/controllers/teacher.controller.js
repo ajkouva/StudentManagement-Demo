@@ -137,4 +137,40 @@ async function stats(req, res) {
 }
 
 
-module.exports = { teacherDetails, addStudent, stats };
+async function markAttendance(req,res) {
+    const{date,records}=req.body;
+    if (!date || !records || !Array.isArray(records)) {
+        return res.status(400).json({ error: 'Invalid request body' });
+    }
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+
+        for(const record of records){
+        
+            const query=`
+            insert into attendance(student_id,date,status)
+            values($1,$2,$3)
+            on conflict (student_id,date) do update
+            set status = excluded.status`;
+
+        await client.query(query,[record.id,date,record.status]);
+
+        }
+
+        await client.query('COMMIT');
+        res.json({message:'Attendance marked successfully'});
+
+    }catch(err){
+        await client.query('ROLLBACK');
+        console.error('Mark attendance error:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+    finally{
+        client.release();
+    }
+
+}
+
+
+module.exports = { teacherDetails, addStudent, stats, markAttendance };
