@@ -4,6 +4,11 @@ node_modules
 # Environment variables
 .env
 
+#testing files
+backend/check_db.js
+backend/debug_attendance.js
+backend/list_students.js
+
 # Logs
 *.log
 npm-debug.log*

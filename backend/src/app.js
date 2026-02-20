@@ -9,10 +9,12 @@ const teacherLimiter = require('./middleware/teacher.limiter');
 
 const app = express();
 app.use(cors({
-    origin: true,//["http://localhost:5500", "http://localhost:5501", "http://127.0.0.1:5501"],
+    origin: process.env.NODE_ENV === 'production'
+        ? ["https://yourdomain.com"]
+        : ["http://localhost:5173", "http://127.0.0.1:5173"], // Add your frontend dev URLs here
     credentials: true
 }));
-app.use(express.json({ limit: "10kb" }));
+app.use(express.json({ limit: "50kb" }));
 app.use(cookies());
 
 app.get("/", (req, res) => {
@@ -21,7 +23,8 @@ app.get("/", (req, res) => {
 
 
 app.use('/api/auth', limiter, authRoutes);
-app.use('/api/student', studentRoutes);
+// Apply limiter to student routes as well
+app.use('/api/student', limiter, studentRoutes);
 app.use('/api/teacher', teacherLimiter, teacherRoutes);
 
 app.use((err, req, res, next) => {

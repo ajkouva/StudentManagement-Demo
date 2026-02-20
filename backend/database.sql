@@ -18,10 +18,10 @@ CREATE TABLE users (
 
 CREATE TABLE student (
     id SERIAL PRIMARY KEY,
-    name VARCHAR(50) NOT NULL UNIQUE,
+    name VARCHAR(50) NOT NULL,
     email VARCHAR(50) NOT NULL UNIQUE REFERENCES users(email) ON DELETE CASCADE,
-	subject varchar(50),
-	roll_num int,
+	subject varchar(50) NOT NULL,
+	roll_num int UNIQUE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -35,9 +35,10 @@ CREATE TABLE teacher (
 
 CREATE TABLE attendance (
     id SERIAL PRIMARY KEY,
-    email VARCHAR(50) NOT NULL REFERENCES student(email) ON DELETE CASCADE,
+    student_id INT NOT NULL REFERENCES student(id) ON DELETE CASCADE,
     date DATE NOT NULL,
-    status attendance_status NOT NULL
+    status attendance_status NOT NULL,
+    UNIQUE(student_id, date)
 );
 
 -- Insert Dummy Data (Users first, then specific roles, then attendance)
@@ -50,9 +51,14 @@ INSERT INTO users (name, email, password_hash, role) VALUES
 ('Riya Sharma', 'riya@gmail.com', 'hashed_pass_2', 'STUDENT'),
 ('Karan Singh', 'karan@gmail.com', 'hashed_pass_3', 'STUDENT'),
 ('Neha Gupta', 'neha@gmail.com', 'hashed_pass_4', 'STUDENT'),
-('Arjun Patel', 'arjun@gmail.com', 'hashed_pass_5', 'STUDENT');
+('Arjun Patel', 'arjun@gmail.com', 'hashed_pass_5', 'STUDENT'),
+('Amit Sir', 'amit@gmail.com', 'hashed_pass_teacher', 'TEACHER');
 
--- 2. Students references users(email)
+-- 2. Teacher
+INSERT INTO teacher (name, email, subject) VALUES
+('Amit Sir', 'amit@gmail.com', 'Computer Science');
+
+-- 3. Students references users(email)
 INSERT INTO student (name, email, subject, roll_num) VALUES
 ('Aman Verma', 'aman@gmail.com', 'Computer Science', 101),
 ('Riya Sharma', 'riya@gmail.com', 'Mathematics', 102),
@@ -61,20 +67,21 @@ INSERT INTO student (name, email, subject, roll_num) VALUES
 ('Arjun Patel', 'arjun@gmail.com', 'Biology', 105);
 
 -- 3. Attendance
--- Note: 'c@gmail.com', 'd@gmail.com', 'b@gmail.com' were in original file but not in users/student tables above.
--- Replacing with valid emails from above for data integrity.
+-- Note: Using subqueries to get IDs because exact IDs might vary if sequences aren't reset, 
+-- but for dummy data script with clean slate, we can assume sequential IDs or use subqueries for robustness.
+-- However, for simplicity in this script, assuming IDs 1-5 correspond to the insertion order.
 
-INSERT INTO attendance (email, date, status) VALUES
-('aman@gmail.com', '2026-02-11', 'PRESENT'),
-('aman@gmail.com', '2026-02-12', 'ABSENT'),
-('riya@gmail.com', '2026-02-13', 'PRESENT'),
-('riya@gmail.com', '2026-02-14', 'ABSENT'),
-('riya@gmail.com', '2026-02-15', 'PRESENT'),
-('karan@gmail.com', '2026-02-11', 'PRESENT'),
-('karan@gmail.com', '2026-02-12', 'ABSENT'),
-('karan@gmail.com', '2026-02-13', 'PRESENT'),
-('karan@gmail.com', '2026-02-14', 'ABSENT'),
-('karan@gmail.com', '2026-02-15', 'PRESENT');
+INSERT INTO attendance (student_id, date, status) VALUES
+(1, '2026-02-11', 'PRESENT'),
+(1, '2026-02-12', 'ABSENT'),
+(2, '2026-02-13', 'PRESENT'),
+(2, '2026-02-14', 'ABSENT'),
+(2, '2026-02-15', 'PRESENT'),
+(3, '2026-02-11', 'PRESENT'),
+(3, '2026-02-12', 'ABSENT'),
+(3, '2026-02-13', 'PRESENT'),
+(3, '2026-02-14', 'ABSENT'),
+(3, '2026-02-15', 'PRESENT');
 
 
 -- View data
@@ -83,5 +90,9 @@ SELECT * FROM student;
 SELECT * FROM teacher;
 SELECT * FROM attendance;
 
--- Select specific attendance
-SELECT TO_CHAR(date, 'YYYY-MM-DD') as date, status FROM attendance WHERE email='aman@gmail.com' ORDER BY date DESC;
+-- Select specific attendance (using Join now)
+SELECT TO_CHAR(a.date, 'YYYY-MM-DD') as date, a.status 
+FROM attendance a
+JOIN student s ON a.student_id = s.id
+WHERE s.email='aman@gmail.com' 
+ORDER BY a.date DESC;
