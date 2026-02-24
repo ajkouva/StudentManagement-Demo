@@ -125,32 +125,34 @@ async function stats(req, res) {
         }
         const teacherSubject = teacherRes.rows[0].subject;
 
-        // Bug fix: removed unnecessary BEGIN/COMMIT transaction — these are read-only SELECTs
-        const totalRes = await pool.query(
-            'SELECT COUNT(*) as count FROM student WHERE LOWER(subject) = LOWER($1)',
-            [teacherSubject]
-        );
-        const total_student = parseInt(totalRes.rows[0].count, 10);
+        // Use CURRENT_DATE (DB-side) so the date is always correct regardless of server timezone
+        const todayStatsRes = await pool.query(`
+            SELECT
+                COUNT(DISTINCT s.id)                                                  AS total_student,
+                COUNT(a.id) FILTER (WHERE a.status = 'PRESENT')                      AS present,
+                COUNT(a.id) FILTER (WHERE a.status = 'ABSENT')                       AS absent,
+                COUNT(a.id) FILTER (WHERE a.status = 'LATE')                         AS late,
+                COUNT(a.id) FILTER (WHERE a.status = 'LEAVE')                        AS on_leave,
+                COUNT(DISTINCT s.id)
+                    - COUNT(a.id) FILTER (WHERE a.date = CURRENT_DATE)               AS not_marked
+            FROM student s
+            LEFT JOIN attendance a
+                ON a.student_id = s.id AND a.date = CURRENT_DATE
+            WHERE LOWER(s.subject) = LOWER($1)
+        `, [teacherSubject]);
 
-        const today = new Date().toISOString().split('T')[0];
-
-        const presentRes = await pool.query(`
-            SELECT COUNT(*) as count 
-            FROM attendance a
-            JOIN student s ON a.student_id = s.id
-            WHERE a.date = $1 AND a.status = $2 AND LOWER(s.subject) = LOWER($3)
-        `, [today, 'PRESENT', teacherSubject]);
-
-        const present = parseInt(presentRes.rows[0].count, 10);
-
-        let absent = total_student - present;
-        if (absent < 0) absent = 0;
+        const row = todayStatsRes.rows[0];
 
         res.status(200).json({
             subject: teacherSubject,
-            total_student,
-            present,
-            absent,
+            total_student: parseInt(row.total_student, 10),
+            today: {
+                present: parseInt(row.present, 10),
+                absent: parseInt(row.absent, 10),
+                late: parseInt(row.late, 10),
+                on_leave: parseInt(row.on_leave, 10),
+                not_marked: parseInt(row.not_marked, 10)
+            }
         });
 
     } catch (err) {
@@ -267,5 +269,294 @@ async function markAttendance(req, res) {
 
 }
 
+async function attendance75(req, res) {
+    try {
+        if (!req.user) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+        if (req.user.role !== "TEACHER") {
+            return res.status(403).json({ message: "Access denied" });
+        }
 
-module.exports = { teacherDetails, addStudent, stats, markAttendance };
+        // Fetch teacher's subject from DB (don't trust req.user.subject directly)
+        const teacherRes = await pool.query(
+            'SELECT subject FROM teacher WHERE email = $1',
+            [req.user.email]
+        );
+        if (teacherRes.rows.length === 0) {
+            return res.status(404).json({ error: "Teacher profile not found" });
+        }
+        const teacherSubject = teacherRes.rows[0].subject;
+
+        // Single query: all-time + current-month attendance stats per student, filter < 75% overall
+        const result = await pool.query(`
+            SELECT
+                s.id,
+                s.name,
+                s.email,
+                s.roll_num,
+
+                -- All-time stats
+                COUNT(a.id)                                                   AS total_classes,
+                COUNT(a.id) FILTER (WHERE a.status = 'PRESENT')              AS present_count,
+                ROUND(
+                    COUNT(a.id) FILTER (WHERE a.status = 'PRESENT')::numeric
+                    / NULLIF(COUNT(a.id), 0) * 100,
+                    2
+                )                                                             AS attendance_percentage,
+
+                -- Current-month stats
+                COUNT(a.id) FILTER (
+                    WHERE DATE_TRUNC('month', a.date) = DATE_TRUNC('month', CURRENT_DATE)
+                )                                                             AS month_total_classes,
+                COUNT(a.id) FILTER (
+                    WHERE a.status = 'PRESENT'
+                      AND DATE_TRUNC('month', a.date) = DATE_TRUNC('month', CURRENT_DATE)
+                )                                                             AS month_present_count,
+                ROUND(
+                    COUNT(a.id) FILTER (
+                        WHERE a.status = 'PRESENT'
+                          AND DATE_TRUNC('month', a.date) = DATE_TRUNC('month', CURRENT_DATE)
+                    )::numeric
+                    / NULLIF(
+                        COUNT(a.id) FILTER (
+                            WHERE DATE_TRUNC('month', a.date) = DATE_TRUNC('month', CURRENT_DATE)
+                        ), 0
+                    ) * 100,
+                    2
+                )                                                             AS month_percentage
+
+            FROM student s
+            LEFT JOIN attendance a ON a.student_id = s.id
+            WHERE LOWER(s.subject) = LOWER($1)
+            GROUP BY s.id, s.name, s.email, s.roll_num
+            HAVING
+                COUNT(a.id) = 0
+                OR ROUND(
+                    COUNT(a.id) FILTER (WHERE a.status = 'PRESENT')::numeric
+                    / NULLIF(COUNT(a.id), 0) * 100,
+                    2
+                ) < 75
+            ORDER BY attendance_percentage ASC NULLS FIRST
+        `, [teacherSubject]);
+
+        return res.status(200).json({
+            subject: teacherSubject,
+            count: result.rows.length,
+            students: result.rows.map(row => ({
+                id: row.id,
+                name: row.name,
+                email: row.email,
+                roll_num: row.roll_num,
+
+                // All-time
+                total_classes: parseInt(row.total_classes, 10),
+                present_count: parseInt(row.present_count, 10),
+                attendance_percentage: row.attendance_percentage !== null
+                    ? parseFloat(row.attendance_percentage)
+                    : 0,
+
+                // Current month
+                current_month: {
+                    total_classes: parseInt(row.month_total_classes, 10),
+                    present_count: parseInt(row.month_present_count, 10),
+                    attendance_percentage: row.month_percentage !== null
+                        ? parseFloat(row.month_percentage)
+                        : 0
+                }
+            }))
+        });
+
+    } catch (err) {
+        console.error('attendance75 error:', err);
+        return res.status(500).json({ error: 'Server error', details: err.message });
+    }
+}
+
+
+async function attendanceDetails(req, res) {
+    try {
+        if (!req.user) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+        if (req.user.role !== "TEACHER") {
+            return res.status(403).json({ message: "Access denied" });
+        }
+
+        // Fetch teacher's subject
+        const teacherRes = await pool.query(
+            'SELECT subject FROM teacher WHERE email = $1',
+            [req.user.email]
+        );
+        if (teacherRes.rows.length === 0) {
+            return res.status(404).json({ error: "Teacher profile not found" });
+        }
+        const teacherSubject = teacherRes.rows[0].subject;
+
+        // Optional ?month=YYYY-MM in query string, default = current month
+        let monthStart;
+        if (req.query.month) {
+            const parsed = new Date(req.query.month + '-01');
+            if (isNaN(parsed.getTime())) {
+                return res.status(400).json({ error: 'Invalid month format. Use YYYY-MM' });
+            }
+            monthStart = req.query.month + '-01';
+        } else {
+            monthStart = null; // will use CURRENT_DATE in SQL
+        }
+
+        // Monthly attendance summary for every student in this subject
+        const result = await pool.query(`
+            SELECT
+                s.id,
+                s.name,
+                s.email,
+                s.roll_num,
+
+                COUNT(a.id) FILTER (
+                    WHERE DATE_TRUNC('month', a.date)
+                        = DATE_TRUNC('month', COALESCE($2::date, CURRENT_DATE))
+                )                                                           AS total_classes,
+
+                COUNT(a.id) FILTER (
+                    WHERE a.status = 'PRESENT'
+                      AND DATE_TRUNC('month', a.date)
+                        = DATE_TRUNC('month', COALESCE($2::date, CURRENT_DATE))
+                )                                                           AS present_count,
+
+                COUNT(a.id) FILTER (
+                    WHERE a.status = 'ABSENT'
+                      AND DATE_TRUNC('month', a.date)
+                        = DATE_TRUNC('month', COALESCE($2::date, CURRENT_DATE))
+                )                                                           AS absent_count,
+
+                COUNT(a.id) FILTER (
+                    WHERE a.status = 'LATE'
+                      AND DATE_TRUNC('month', a.date)
+                        = DATE_TRUNC('month', COALESCE($2::date, CURRENT_DATE))
+                )                                                           AS late_count,
+
+                COUNT(a.id) FILTER (
+                    WHERE a.status = 'LEAVE'
+                      AND DATE_TRUNC('month', a.date)
+                        = DATE_TRUNC('month', COALESCE($2::date, CURRENT_DATE))
+                )                                                           AS leave_count,
+
+                ROUND(
+                    COUNT(a.id) FILTER (
+                        WHERE a.status = 'PRESENT'
+                          AND DATE_TRUNC('month', a.date)
+                            = DATE_TRUNC('month', COALESCE($2::date, CURRENT_DATE))
+                    )::numeric
+                    / NULLIF(
+                        COUNT(a.id) FILTER (
+                            WHERE DATE_TRUNC('month', a.date)
+                                = DATE_TRUNC('month', COALESCE($2::date, CURRENT_DATE))
+                        ), 0
+                    ) * 100,
+                    2
+                )                                                           AS attendance_percentage
+
+            FROM student s
+            LEFT JOIN attendance a ON a.student_id = s.id
+            WHERE LOWER(s.subject) = LOWER($1)
+            GROUP BY s.id, s.name, s.email, s.roll_num
+            ORDER BY s.roll_num ASC
+        `, [teacherSubject, monthStart]);
+
+        // Derive the label for which month is being returned
+        const monthLabel = monthStart
+            ? req.query.month
+            : new Date().toISOString().slice(0, 7); // YYYY-MM
+
+        return res.status(200).json({
+            subject: teacherSubject,
+            month: monthLabel,
+            count: result.rows.length,
+            students: result.rows.map(row => ({
+                id: row.id,
+                name: row.name,
+                email: row.email,
+                roll_num: row.roll_num,
+                total_classes: parseInt(row.total_classes, 10),
+                present_count: parseInt(row.present_count, 10),
+                absent_count: parseInt(row.absent_count, 10),
+                late_count: parseInt(row.late_count, 10),
+                leave_count: parseInt(row.leave_count, 10),
+                attendance_percentage: row.attendance_percentage !== null
+                    ? parseFloat(row.attendance_percentage)
+                    : 0
+            }))
+        });
+
+    } catch (err) {
+        console.error('attendanceDetails error:', err);
+        return res.status(500).json({ error: 'Server error', details: err.message });
+    }
+}
+
+async function deleteStudent(req, res) {
+    try {
+        if (!req.user) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+        if (req.user.role !== "TEACHER") {
+            return res.status(403).json({ message: "Access denied" });
+        }
+
+        const studentId = parseInt(req.params.id, 10);
+        if (isNaN(studentId) || studentId <= 0) {
+            return res.status(400).json({ error: 'Invalid student ID' });
+        }
+
+        // Fetch teacher's subject so we only allow deleting their own students
+        const teacherRes = await pool.query(
+            'SELECT subject FROM teacher WHERE email = $1',
+            [req.user.email]
+        );
+        if (teacherRes.rows.length === 0) {
+            return res.status(404).json({ error: 'Teacher profile not found' });
+        }
+        const teacherSubject = teacherRes.rows[0].subject;
+
+        // Verify student exists AND belongs to this teacher's subject
+        const studentRes = await pool.query(
+            'SELECT id, email FROM student WHERE id = $1 AND LOWER(subject) = LOWER($2)',
+            [studentId, teacherSubject]
+        );
+        if (studentRes.rows.length === 0) {
+            return res.status(404).json({ error: 'Student not found or not in your subject' });
+        }
+        const studentEmail = studentRes.rows[0].email;
+
+        // Delete from both tables in a transaction so login is also revoked
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+
+            // Delete attendance rows first to avoid FK violations
+            await client.query('DELETE FROM attendance WHERE student_id = $1', [studentId]);
+            await client.query('DELETE FROM student WHERE id = $1', [studentId]);
+            await client.query('DELETE FROM users WHERE email = $1', [studentEmail]);
+
+            await client.query('COMMIT');
+        } catch (err) {
+            await client.query('ROLLBACK');
+            throw err;
+        } finally {
+            client.release();
+        }
+
+        return res.status(200).json({
+            message: 'Student deleted successfully. Login access revoked.',
+            deleted: { id: studentId, email: studentEmail }
+        });
+
+    } catch (err) {
+        console.error('deleteStudent error:', err);
+        return res.status(500).json({ error: 'Server error', details: err.message });
+    }
+}
+
+
+module.exports = { teacherDetails, addStudent, stats, markAttendance, attendance75, attendanceDetails, deleteStudent };
