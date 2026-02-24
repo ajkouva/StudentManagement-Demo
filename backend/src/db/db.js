@@ -1,12 +1,15 @@
 const pg = require('pg');
-// require('dotenv').config();
+require('dotenv').config();
 
 const pool = new pg.Pool({
+    connectionString: process.env.DATABASE_URL,
+    // Add fallback for discrete env vars if DATABASE_URL is not provided
     user: process.env.DB_USER,
     host: process.env.DB_HOST,
     database: process.env.DB_NAME,
     password: process.env.DB_PASSWORD,
     port: process.env.DB_PORT,
+    ssl: false,
     // Improvement #20: explicit pool config instead of relying on silent defaults
     max: 10,   // max open connections (default is also 10, but explicit = predictable)
     idleTimeoutMillis: 30000, // close idle connections after 30 s
