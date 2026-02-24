@@ -6,13 +6,16 @@ const studentRoutes = require('./routes/student.routes');
 const teacherRoutes = require('./routes/teacher.routes');
 const limiter = require('./middleware/auth.limiter');
 const teacherLimiter = require('./middleware/teacher.limiter');
+const studentLimiter = require('./middleware/student.limiter');
 
 const app = express();
 app.use(cors({
-    origin: true,//["http://localhost:5500", "http://localhost:5501", "http://127.0.0.1:5501"],
+    origin: process.env.NODE_ENV === 'production'
+        ? ["https://yourdomain.com"]
+        : ["http://localhost:5173", "http://127.0.0.1:5173"], // Add your frontend dev URLs here
     credentials: true
 }));
-app.use(express.json({ limit: "10kb" }));
+app.use(express.json({ limit: "50kb" }));
 app.use(cookies());
 
 app.get("/", (req, res) => {
@@ -21,7 +24,8 @@ app.get("/", (req, res) => {
 
 
 app.use('/api/auth', limiter, authRoutes);
-app.use('/api/student', studentRoutes);
+// Bug fix: student routes need a higher rate limit than the auth limiter (10/15min was too low)
+app.use('/api/student', studentLimiter, studentRoutes);
 app.use('/api/teacher', teacherLimiter, teacherRoutes);
 
 app.use((err, req, res, next) => {

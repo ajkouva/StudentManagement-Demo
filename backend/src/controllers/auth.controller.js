@@ -19,12 +19,25 @@ async function register(req, res) {
             return res.status(400).json({ message: "required all fields" })
         }
 
-        if (!email.includes("@")) {
+        // Sanitize inputs
+        const cleanName = name.trim();
+        const cleanEmail = email.trim().toLowerCase();
+        const cleanSubject = subject.trim();
+
+        // Robust Email Regex explanation: ^[^\s@]+@[^\s@]+\.[^\s@]+$ matches generic email format
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(cleanEmail)) {
             return res.status(400).json({ message: "Invalid email format" });
+        }
+        if (password.length < 8) {
+            return res.status(400).json({ message: "Password must be at least 8 characters long" });
+        }
+        if (cleanName.length > 50 || cleanSubject.length > 50) {
+            return res.status(400).json({ message: "Name and Subject must be less than 50 characters" });
         }
 
 
-        const isuserExist = await pool.query('select 1 from users where email = $1', [email]);
+        const isuserExist = await pool.query('select 1 from users where email = $1', [cleanEmail]);
         if (isuserExist.rows.length > 0) {
             return res.status(400).json({
                 message: "user already exists"
@@ -42,18 +55,23 @@ async function register(req, res) {
         const client = await pool.connect();
         try {
             await client.query('BEGIN');
-            await client.query('INSERT INTO users(name, email, password_hash, role) VALUES($1, $2, $3, $4)', [name, email, password_hash, role]);
-            await client.query('INSERT INTO teacher(name, email, subject) VALUES($1, $2, $3)', [name, email, subject]);
+            // Use sanitized values
+            await client.query('INSERT INTO users(name, email, password_hash, role) VALUES($1, $2, $3, $4)', [cleanName, cleanEmail, password_hash, role]);
+            await client.query('INSERT INTO teacher(name, email, subject) VALUES($1, $2, $3)', [cleanName, cleanEmail, cleanSubject]);
             await client.query('COMMIT');
         } catch (e) {
             await client.query('ROLLBACK');
+            // Handle Unique Constraint Violation (e.g. email already exists)
+            if (e.code === '23505') {
+                return res.status(400).json({ message: "User with this email already exists" });
+            }
             console.error(e);
             return res.status(500).json({ message: "database error" });
         } finally {
             client.release();
         }
 
-        const token = jwt.sign({ email: email, role: role }, process.env.JWT_SECRET, { expiresIn: '1d' });
+        const token = jwt.sign({ email: cleanEmail, role: role }, process.env.JWT_SECRET, { expiresIn: '1d' });
 
         res.cookie("token", token, cookie);
 
@@ -74,11 +92,15 @@ async function login(req, res) {
             return res.status(400).json({ message: "required all fields" })
         }
 
-        if (!email.includes("@")) {
+        const cleanEmail = email.trim().toLowerCase();
+        // Robust Email Regex
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+        if (!emailRegex.test(cleanEmail)) {
             return res.status(400).json({ message: "Invalid email format" });
         }
 
-        const isuserExist = await pool.query('select id,name,email,role,password_hash from users where email=$1', [email]);
+        const isuserExist = await pool.query('select id,name,email,role,password_hash from users where email=$1', [cleanEmail]);
 
         if (isuserExist.rows.length === 0) {
             return res.status(400).json({ message: "wrong email or password" });
@@ -114,13 +136,16 @@ async function login(req, res) {
 
 async function me(req, res) {
     try {
+        if (!req.user) {
+            return res.status(401).json({ message: "Unauthorized" });
+        }
         let user = await pool.query('select id,name,email,role from users where email=$1', [req.user.email]);
 
         user = user.rows[0]
         if (!user) return res.status(404).json({ message: "User not found" });
         res.json({
             message: "details fetched successfully",
-            user: {                   
+            user: {
                 "id": user.id,
                 "name": user.name,
                 "email": user.email,
@@ -141,7 +166,6 @@ async function logout(req, res) {
         console.error(err);
         res.status(500).json({ message: "Internal server error" });
     }
-}
-
+};
 
 module.exports = { register, login, me, logout };
