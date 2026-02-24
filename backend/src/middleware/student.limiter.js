@@ -4,7 +4,7 @@ const rateLimit = require('express-rate-limit');
 // 10 req/15min (auth limiter) is too low for dashboard data fetching.
 const studentLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 100,
+    max: 1000,
     message: {
         message: "too many requests, please try after 15 minutes"
     }

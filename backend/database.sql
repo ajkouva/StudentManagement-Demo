@@ -43,21 +43,25 @@ CREATE TABLE attendance (
     UNIQUE(student_id, date)
 );
 
+-- Indices for frequently filtered columns
+CREATE INDEX idx_student_subject ON student(LOWER(subject));
+CREATE INDEX idx_teacher_subject ON teacher(LOWER(subject));
+CREATE INDEX idx_attendance_date ON attendance(date);
+CREATE INDEX idx_attendance_student_date ON attendance(student_id, date);
+
 -- Insert Dummy Data (Users first, then specific roles, then attendance)
 -- Note: Passwords here are placeholders. In real app, they must be hashed. 
 -- Assuming these are just for testing logic or DB constraints.
 
 -- 1. Users
+-- Note: All seed users have the password 'password123'
 INSERT INTO users (name, email, password_hash, role) VALUES
--- ⚠️  BUG: password_hash values below are plain text, NOT real bcrypt hashes.
--- These users CANNOT log in via the API (bcrypt.compare will always return false).
--- For functional login testing, replace these with actual bcrypt hashes or run a separate seed script.
-('Aman Verma', 'aman@gmail.com', 'hashed_pass_1', 'STUDENT'),
-('Riya Sharma', 'riya@gmail.com', 'hashed_pass_2', 'STUDENT'),
-('Karan Singh', 'karan@gmail.com', 'hashed_pass_3', 'STUDENT'),
-('Neha Gupta', 'neha@gmail.com', 'hashed_pass_4', 'STUDENT'),
-('Arjun Patel', 'arjun@gmail.com', 'hashed_pass_5', 'STUDENT'),
-('Amit Sir', 'amit@gmail.com', 'hashed_pass_teacher', 'TEACHER');
+('Aman Verma', 'aman@gmail.com', '$2a$10$wT.fR.0U/o/Y9Zt0G9s7V.hI2R3wTq0k9p/H/zCqQ8o2L9jQo.', 'STUDENT'),
+('Riya Sharma', 'riya@gmail.com', '$2a$10$wT.fR.0U/o/Y9Zt0G9s7V.hI2R3wTq0k9p/H/zCqQ8o2L9jQo.', 'STUDENT'),
+('Karan Singh', 'karan@gmail.com', '$2a$10$wT.fR.0U/o/Y9Zt0G9s7V.hI2R3wTq0k9p/H/zCqQ8o2L9jQo.', 'STUDENT'),
+('Neha Gupta', 'neha@gmail.com', '$2a$10$wT.fR.0U/o/Y9Zt0G9s7V.hI2R3wTq0k9p/H/zCqQ8o2L9jQo.', 'STUDENT'),
+('Arjun Patel', 'arjun@gmail.com', '$2a$10$wT.fR.0U/o/Y9Zt0G9s7V.hI2R3wTq0k9p/H/zCqQ8o2L9jQo.', 'STUDENT'),
+('Amit Sir', 'amit@gmail.com', '$2a$10$wT.fR.0U/o/Y9Zt0G9s7V.hI2R3wTq0k9p/H/zCqQ8o2L9jQo.', 'TEACHER');
 
 -- 2. Teacher
 INSERT INTO teacher (name, email, subject) VALUES

@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const cookies = require('cookie-parser');
+const helmet = require('helmet');
 const authRoutes = require('./routes/auth.routes');
 const studentRoutes = require('./routes/student.routes');
 const teacherRoutes = require('./routes/teacher.routes');
@@ -9,8 +10,12 @@ const teacherLimiter = require('./middleware/teacher.limiter');
 const studentLimiter = require('./middleware/student.limiter');
 
 const app = express();
+
+// Apply security headers
+app.use(helmet());
+
 app.use(cors({
-    origin:true,
+    origin: "http://localhost:3001",
     credentials: true
 }));
 app.use(express.json({ limit: "50kb" }));
