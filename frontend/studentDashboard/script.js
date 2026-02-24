@@ -2,6 +2,10 @@ const attendence=document.querySelector(".attendance-percent");
 const dataE1=document.querySelectorAll(".date")
 const mounthE1=document.querySelector(".mounth");
 const calender=document.querySelector(".calender")
+const code=document.getElementById("code");
+const subject=document.getElementById("subject");
+const roll_no=document.getElementById("roll_no");
+
 document.addEventListener("DOMContentLoaded",()=>{
     changeper();
 
@@ -9,16 +13,26 @@ document.addEventListener("DOMContentLoaded",()=>{
 }) 
 async function changeper(){
     try {
-        const res= await fetch("http://localhost:3000/api/student/studentDetails");
-        const data=await res.json();
+        const res = await fetch("http://127.0.0.1:3000/api/student/studentDetails", {
+            method: "GET",
+            credentials: "include"
+        });
+
+        const data = await res.json();
         console.log(data);
+        addDetails(data);
+
     } catch (error) {
         console.error(error);
     }
-    // const percent = (data.totalpresentdays*100)/30;
-    // attendence.textContent=`${percent}`;
-    
 }
+function addDetails(data){
+   code.textContent=`${data.profile.id_code}`;
+   subject.textContent=`${data.profile.subject}`;
+   roll_no.textContent=`${data.profile.roll_no}`;
+
+}
+
 mounthE1.addEventListener("input",()=>{
     calender.innerHTML=`
     <div class="day-name">SUN</div>

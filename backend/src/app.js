@@ -10,9 +10,7 @@ const studentLimiter = require('./middleware/student.limiter');
 
 const app = express();
 app.use(cors({
-    origin: process.env.NODE_ENV === 'production'
-        ? ["https://yourdomain.com"]
-        : ["http://localhost:5173", "http://127.0.0.1:5173"], // Add your frontend dev URLs here
+    origin:true,
     credentials: true
 }));
 app.use(express.json({ limit: "50kb" }));
