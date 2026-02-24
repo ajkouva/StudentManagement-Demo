@@ -1,9 +1,8 @@
-
 const EmailE1=document.querySelector(".Email");
 const PasswordE1=document.querySelector(".Password");
 const loginBtn=document.querySelector("#login-btn");
-const Email=EmailE1.value;
-const Password=PasswordE1.value;
+
+
 
 loginBtn.addEventListener("click",(e)=>{
     checkpassword();
@@ -11,16 +10,22 @@ loginBtn.addEventListener("click",(e)=>{
 })
 async function loginwork(){
     
-    console.log("hello")
+    // console.log("hello")
     try {
         const rse = await fetch("http://localhost:3000/api/auth/login", {
             method: "POST",
-            credentials: 'include',
+            // credentials: 'include',
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ email, password })
+            body: JSON.stringify({ "email":EmailE1.value, "password":PasswordE1.value})
         })
-        const data = await rse.json();
-        console.log(data);
+        const data=rse.json();
+
+        if(data.user.role==="STUDENT"){
+            window.location.href="../studentDashboard/index.html";
+        }
+        else if(data.user.role==="TEACHER"){
+            window.location.href="../Taecherdashboard/desktoppage/desktop.html";
+        }
     } catch (error) {
         console.log(error);
     }
@@ -28,9 +33,9 @@ async function loginwork(){
 }
 function checkpassword(){
 
-    if(Email.trim()===""|| Password.trim()===""){
+    if( PasswordE1.value.trim()==="" || EmailE1.value.trim()===""){
 
         alert("email or password should not be empty");
-        return false;
     }
+
 }
