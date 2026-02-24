@@ -9,15 +9,17 @@ document.addEventListener("DOMContentLoaded",()=>{
 }) 
 async function changeper(){
     try {
-        const res= await fetch("http://localhost:3000/api/student/studentDetails");
-        const data=await res.json();
+        const res = await fetch("http://127.0.0.1:3000/api/student/studentDetails", {
+            method: "GET",
+            credentials: "include"
+        });
+
+        const data = await res.json();
         console.log(data);
+
     } catch (error) {
         console.error(error);
     }
-    // const percent = (data.totalpresentdays*100)/30;
-    // attendence.textContent=`${percent}`;
-    
 }
 mounthE1.addEventListener("input",()=>{
     calender.innerHTML=`
