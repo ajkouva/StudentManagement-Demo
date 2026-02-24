@@ -11,6 +11,9 @@ const studentLimiter = require('./middleware/student.limiter');
 
 const app = express();
 
+// Trust Render's proxy (required for rate limiting and correct IP detection)
+app.set('trust proxy', 1);
+
 // Apply security headers
 app.use(helmet());
 
